@@ -77,11 +77,15 @@ export const BwcPageElementMixin  = Base  => {
                     trustedGlobals: [ "setQuantumMetricUser" ]
                 });
 
-                // Load QuantumScript in the global window so it can access QuantumMetricUser previously
-                // defined there, and obtain the QuantumMetricAPI global (used below)
-                await loadScript(this, quantumJs, { trustedMode: true,
-                    trustedGlobals: [ "QuantumMetricAPI" ]
-                });
+                try {
+                    // Load QuantumScript in the global window so it can access QuantumMetricUser previously
+                    // defined there, and obtain the QuantumMetricAPI global (used below)
+                    await loadScript(this, quantumJs, { trustedMode: true,
+                        trustedGlobals: [ "QuantumMetricAPI" ]
+                    });
+                } catch (err) {
+                    console.error(err);
+                }
 
                 // Initialize QuantumMetricUser here in the sandbox window
                 this.logQMUserData();
