@@ -7,8 +7,9 @@ import * as BwcPageHelpers from "c/bwcPageHelpers";
 import * as BWCLogger from "c/bwcLogger";
 import * as BwcAnalyticsEventServices from 'c/bwcAnalyticsEventServices';
 import { loadScript, loadStyle } from 'lightning/platformResourceLoader';
+import quantumMetricUserInit from '@salesforce/resourceUrl/QuantumMetricUserInit';
 import quantumJs from '@salesforce/resourceUrl/QuantumScript';
-import getQMFlagStatus from '@salesforce/apex/QMCustomSettinghandler.getQMFlagStatus'; 
+import getQMFlagStatus from '@salesforce/apex/QMCustomSettinghandler.getQMFlagStatus';
 
 
 
@@ -33,13 +34,13 @@ export const BwcPageElementMixin  = Base  => {
     return class extends NavigationMixin (Base)  {
 
         @wire(CurrentPageReference)
-        currentPageReference; 
-    
+        currentPageReference;
+
         @wire(MessageContext)
         messageContext;
-        
+
         currentUserData;
-        @wire(getRecord, { recordId: Id, fields: [userUserNameFIELD, userNameFIELD, userEmailFIELD, userIsActiveFIELD, userPhoneFIELD, userATTIDFIELD, userProfileFIELD, userLastLoginFIELD, userStoreFIELD]}) 
+        @wire(getRecord, { recordId: Id, fields: [userUserNameFIELD, userNameFIELD, userEmailFIELD, userIsActiveFIELD, userPhoneFIELD, userATTIDFIELD, userProfileFIELD, userLastLoginFIELD, userStoreFIELD]})
         currentUserInfo({error, data}) {
             if (data) {
                 this.currentUserData = data;
@@ -47,18 +48,18 @@ export const BwcPageElementMixin  = Base  => {
             } else if(error) {
             }
         }
-   
+
         subscriptions = []; // Manage subscriptions to auto-release on disconnect
         qmReplayLink;
 
         /*
             Derived class should call super.connectedCallback if it overrides this.
         */
-        connectedCallback() {
-                
+        async connectedCallback() {
+
             // Call bwcComponentBase version
             super.connectedCallback();
-    
+
             // By default, subscribe to refresh since most components should act on a refresh.
             // Derived class can just override handleLmsRefresh.
             this.subscribeToMessage(
@@ -67,33 +68,33 @@ export const BwcPageElementMixin  = Base  => {
                     this.handleLmsRefresh(message.scope, message.recordId);
                 },
                 true
-            ); 
-            
-            getQMFlagStatus()
-                .then(result => {
-                    if(result === true){
-                        debugger;
-                        Promise.all([
-                            loadScript(this, quantumJs, {trustedMode: true, trustedGlobals: ['QuantumMetricUser'] }),
-                        ]).then(() => {
-                            debugger;
-                            this.logQMUserData();
-                            console.log('Quantum js Loaded');
-                            if(!this.qmReplayLink) {
-                                this.qmReplayLink = QuantumMetricAPI.getReplay();
-                            }
-                        
-                        }).catch(error => {
-                        console.log('ERROR loading Quantum js', error);
-                
-                        });                  
-                    }
+            );
 
-                }).catch(error =>{
-                    console.log("error==",error);
-                })
-                
-        }          
+            const result = await getQMFlagStatus();
+            if (result === true) {
+                // Initialize QuantumMetricUser in the global (i.e. system mode) window
+                await loadScript(this, quantumMetricUserInit, { trustedMode: true,
+                    trustedGlobals: [ "setQuantumMetricUser" ]
+                });
+
+                // Load QuantumScript in the global window so it can access QuantumMetricUser previously
+                // defined there, and obtain the QuantumMetricAPI global (used below)
+                await loadScript(this, quantumJs, { trustedMode: true,
+                    trustedGlobals: [ "QuantumMetricAPI" ]
+                });
+
+                // Initialize QuantumMetricUser here in the sandbox window
+                this.logQMUserData();
+
+                // Pass the QuantumMetricUser from the sandbox window to the global window
+                window.setQuantumMetricUser?.(window.QuantumMetricUser);
+
+                console.log("Quantum js Loaded");
+                if (!this.qmReplayLink) {
+                    this.qmReplayLink = QuantumMetricAPI?.getReplay();
+                }
+            }
+        }
 
         logQMUserData() {
             if(this.currentUserData && this.currentUserData.fields) {
@@ -128,7 +129,7 @@ export const BwcPageElementMixin  = Base  => {
                 }
             }
         }
-    
+
         /*
             Derived class should call super.disconnectedCallback if it overrides this.
         */
@@ -138,7 +139,7 @@ export const BwcPageElementMixin  = Base  => {
                 unsubscribe(subscription);
             });
         }
-    
+
         /*
             Subscribe to an LMS message channel.
         */
@@ -151,7 +152,7 @@ export const BwcPageElementMixin  = Base  => {
             );
             this.subscriptions.push(subscription);
         }
-    
+
         /*
             Unsubscribe from an LMS message channel subscription.
         */
@@ -162,41 +163,41 @@ export const BwcPageElementMixin  = Base  => {
                 this.subscriptions.splice(index, 1);
             }
         }
-    
+
         /*
             Publish a message to an LMS message channel.
         */
         publishMessage(messageChannel, message) {
             publish(this.messageContext, messageChannel, message);
         }
-    
+
         /*
             Easily send a refresh message for other components to handle.
         */
         sendLmsRefresh(recordId, scope) {
             this.publishMessage(REFRESHMC, { scope, recordId });
         }
-    
+
         /*
             Derived class overrides this to handle refresh message.
         */
         // eslint-disable-next-line no-unused-vars
         handleLmsRefresh(scope, recordId) {}
-    
+
         /*
             Use navigate service to navigate to specified page reference.
         */
         navigate(pageReference, replace) {
             this[NavigationMixin.Navigate](pageReference, replace);
         }
-    
+
         /*
             Use navigate service to generate the target URL for a specified page reference.
         */
         generateUrl(pageReference) {
             return this[NavigationMixin.GenerateUrl](pageReference);
         }
-    
+
         /*
             Open the specified page reference in a subtab, if on desktop. Otherwise navigate to the page.
         */
@@ -208,7 +209,7 @@ export const BwcPageElementMixin  = Base  => {
                 this.navigate(pageReference, replace);
             }
         }
-    
+
         /*
             Open the specified page reference in a console tab.
         */
@@ -220,12 +221,12 @@ export const BwcPageElementMixin  = Base  => {
                 this.navigate(pageReference, replace);
             }
         }
-    
+
         /*
             Open specified page in a new browser tab.
         */
         async openNewTab(pageReference) {
-    
+
             let targetUrl;
             if (typeof pageReference === 'string') {
                 targetUrl = pageReference;
@@ -233,15 +234,15 @@ export const BwcPageElementMixin  = Base  => {
             else {
                 targetUrl = await this.generateUrl(pageReference);
             }
-    
+
             if (targetUrl === '') {
                 targetUrl = pageReference.attributes?.url;
             }
-    
+
             // Just open new tab
             window.open(targetUrl, "_blank");
         }
-    
+
         /*
             Close the focused console tab. If one mobile, navigate to homepage instead.
         */
@@ -258,14 +259,14 @@ export const BwcPageElementMixin  = Base  => {
                 });
             }
         }
-    
+
         /*
             Fire event to show toast.
         */
         showToast(title, message, variant, mode) {
             this.dispatchEvent(new ShowToastEvent({ title, message, variant, mode }));
         }
-    
+
         /*
             Add any notification, page template must include c-bwc-notifications component.
         */
@@ -277,21 +278,21 @@ export const BwcPageElementMixin  = Base  => {
                 BwcUtils.warn("No bwc-notifications component found, notification could not be displayed.");
             }
         }
-    
+
         /*
             Add a scoped notification, page template must include c-bwc-notifications component.
         */
         addScopedNotification(message, variant, texture, theme ) {
             this.addNotification("scoped", message, variant, undefined, texture, theme);
         }
-    
+
         /*
             Add an inline notification, page template must include c-bwc-notifications component.
         */
         addInlineNotification(message, variant) {
             this.addNotification("inline", message, variant);
         }
-    
+
         /*
             Remove all notifications from c-bwc-notifications component.
         */
@@ -301,7 +302,7 @@ export const BwcPageElementMixin  = Base  => {
                 notificationsComponent.clearNotifications();
             }
         }
-    
+
         /*
             Returns true if there is at least one notification.
         */
@@ -312,7 +313,7 @@ export const BwcPageElementMixin  = Base  => {
             }
             return false;
         }
-    
+
         /*
             Returns true if there is at least one notification with variant == error.
         */
@@ -323,25 +324,25 @@ export const BwcPageElementMixin  = Base  => {
             }
             return false;
         }
-    
+
         /*
             Use notifications component on component to display error to user.
         */
         handleError(error, message, context, notificationType, action, variant) {
-    
+
             let errorToLog;
             if (error?.body?.message && error.body.message.startsWith('{')) {
                 try {
                     errorToLog = JSON.parse(error.body.message);
                 }
-                catch(e) {                
+                catch(e) {
                     errorToLog = error;
                 }
             }
             else {
                 errorToLog = error;
             }
-    
+
             // Always show in console.
             if (context) {
                 BwcUtils.error('Error in ' + context, errorToLog);
@@ -349,7 +350,7 @@ export const BwcPageElementMixin  = Base  => {
             else {
                 BwcUtils.error(errorToLog);
             }
-    
+
             // For mobile, write to nebula
             if (this.isMobile) {
                 if (error instanceof Error) {
@@ -359,7 +360,7 @@ export const BwcPageElementMixin  = Base  => {
                     BWCLogger.logError(new Error(error));
                 }
             }
-    
+
             let finalMessage;
             if (message) {
                 finalMessage = message;
@@ -377,7 +378,7 @@ export const BwcPageElementMixin  = Base  => {
                             finalMessage = innerMessage.message;
                         }
                     }
-                    catch(e) {                
+                    catch(e) {
                         // Leave as-is
                     }
                 }
@@ -385,10 +386,10 @@ export const BwcPageElementMixin  = Base  => {
             else {
                 finalMessage = error;
             }
-    
+
             this.addNotification(notificationType ? notificationType : "scoped", finalMessage,variant ? variant : "error", action);
         }
-    
+
         /*
             Open a modal and return a promise which is resolved when the modal closes.
         */
@@ -396,14 +397,14 @@ export const BwcPageElementMixin  = Base  => {
         async showModal(bodyComponentName, bodyComponentArguments, cssClass, showCloseButton) {
             BwcPageHelpers.showModal(...arguments);
         }
-    
+
         /*
             Open a modal or subtab with the same content.
         */
         async showModalEx(args) {
             BwcPageHelpers.showModalEx(args);
         }
-    
+
         /*
             Show a simple confirmation modal with specific title, message, and button labels.
         */
@@ -411,37 +412,37 @@ export const BwcPageElementMixin  = Base  => {
         async confirm(title, message, okButtonLabel, cancelButtonLabel, okCallback, cancelCallback) {
             return BwcPageHelpers.confirm(...arguments);
         }
-    
+
         /*
             Log a watermark event.
         */
         async logAnalyticsEvent(eventName, interactionId, billingAccountId, caseId, detailValues) {
-            const currentPageUrl = await this.generateUrl(this.currentPageReference);        
+            const currentPageUrl = await this.generateUrl(this.currentPageReference);
             BwcAnalyticsEventServices.logAnalyticsEvent(eventName, interactionId, billingAccountId, caseId, detailValues, currentPageUrl);
         }
-    
+
         /**
-         * @param  {String} message. 
+         * @param  {String} message.
          */
         async log(message) {
-    
+
             message = typeof message != 'string' ? JSON.serialize(message) : message;
-    
+
             await BWCLogger.log(message);
-    
+
         }
-    
+
         /**
          * @param  {Error} error
          */
          async logError(error) {
-    
+
             error = error instanceof Error ? error : new Error(error);
-    
+
             await BWCLogger.logError(error);
-    
+
         }
-    
+
 
 
     };
